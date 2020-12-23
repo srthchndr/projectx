@@ -1,6 +1,7 @@
+require('dotenv').config();
 const express = require('express');
-<<<<<<< HEAD
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 
@@ -15,7 +16,7 @@ app.get('/', (req, res) => {
     res.send("Hi, this is the start of something great")
 });
 
-const PORT = process.env.PORT || 12345;
+const PORT = process.env.PORT || 5000;
 app.listen(PORT,()=>{
     console.log(`Express server started at ${PORT}`);
 })
@@ -25,7 +26,7 @@ let mongoose = require('mongoose');
 const User = require('./Model/user');
 const { response } = require('express');
 
-mongoose.connect('mongodb+srv://admin:admin@cluster0.ovgal.mongodb.net/registration-details?retryWrites=true&w=majority', {useNewUrlParser: true,
+mongoose.connect(process.env.DB_CONNECTION_URL, {useNewUrlParser: true,
 useUnifiedTopology: true});
 
 const db = mongoose.connection;
@@ -53,108 +54,65 @@ app.post('/register', async (req, res) => {
             console.log("Saved the user into DB");
             console.log(output);
         })
-            res.send("Received response and is successful");
+            res.send("Updated user in DB");
     } 
     }catch(err) {
         console.error("ERROR: " + err);
+        res.sendStatus(500);
     }  
 
 });
 
-app.post('/login', async(req, res) => {
-    try{
-        const user = await User.findOne({ email: req.body.email });
+function generateAccessToken(user){
+    return jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn:'1h' });
+}
 
+app.post('/api/auth', async(req, res) => {
+    try{
+        console.log("Entered Auth")
+        const user = await User.findOne({ email: req.body.email });
+        console.log("User email: "+ user.email);
+        tokenUser = { email: user.email, firstName: user.firstName, lastName: user.lastName}
         if(user){
             const result = await  bcrypt.compare(req.body.password, user.password)
             if(result){
-                console.log("User validated.");
-                res.send("Passwords Matched");
+                const accessToken = generateAccessToken(tokenUser);
+                const refreshToken = jwt.sign(tokenUser, process.env.REFRESH_TOKEN_SECRET);
+
+                const updateRes = await User.findOneAndUpdate({email: user.email}, { refreshToken: refreshToken })
+                await updateRes.save();
+                console.log("User validated, Access token is "+ accessToken);
+                res.json({accessToken: accessToken, refreshToken: refreshToken});
             }else{
                 console.log("Passwords does not match");
-                res.send("Passwords does not match");
+                res.sendStatus(401);
             }
         }else{
             console.log("User not found");
-            res.send("error")
+            res.sendStatus(403);
         }
     }catch(err){
         console.log("Error: " + err);
+        res.sendStatus(500);
     }
 });
-=======
-const bodyParser = require('body-parser');
-const jwt = require('jsonwebtoken');
-const expressJwt = require('express-jwt');
-const cors = require('cors');
-const jwt_decode = require('jwt-decode');
 
-const app = express(); 
+app.post('/api/token', async(req, res) =>{
+    try{
+        const refreshToken = req.body.token;
+        if(refreshToken == null) return res.sendStatus(401);
+        const fetchingToke = await User.findOne({ refreshToken: refreshToken});
+        if(!fetchingToke) return res.sendStatus(403);
 
-app.use(bodyParser.json()) 
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(cors());
-app.use(expressJwt({ secret: 'todo-app-super-shared-secret', algorithms: ['HS256'], requestProperty: 'auth' }).unless({path: ['/api/auth', ]}));
+        jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET, (err, user) => {
+            if(err) return res.sendStatus(403);
 
-var checkRefreshNeeded = function (req, res, next) {
-    if ( req.path == '/api/auth' || req.path == '/refresh') {
-        return next();
+            const accessToken = generateAccessToken({ email: user.email, firstName: user.firstName, lastName: user.lastName});
+            res.json({accessToken: accessToken});
+        })
+    }catch(err){
+        console.log("Err"+ err);
+        res.sendStatus(500);
     }
-    console.log('Check Refresh');
-    console.log(req.auth);
-    if (req.headers.authorization && req.headers.authorization.split(' ')[0] === 'Bearer') {
-        let token = req.headers.authorization.split(' ')[1];        
-        let decodedToken = jwt_decode(token);
-        let d1 = new Date();
-        let d2 = new Date(decodedToken.exp * 1000);
-        let timeRemaining = (d2 - d1)/1000;
-        console.log(timeRemaining);
-        if(timeRemaining < 60) {
-            res.sendStatus(401);
-        }
-        else{
-            next();
-        }
-    }
-    else {
-        next();
-    }
-  }
-  
-app.use(checkRefreshNeeded);
 
-app.post('/api/auth', function(req, res) {
-    console.log(req.body);
-    
-    const body = req.body;
-    
-    //check username and password in db and send token if valid user record is found
-    if(body.password != 'password') return res.sendStatus(401);
-    
-    let token = jwt.sign({ userID: 2, role: 'admin' }, 'todo-app-super-shared-secret', { expiresIn: '75000' });
-    res.send({ auth_token: token, refresh_token: 'RefreshToken' });
-});
-
-app.post('/refresh', function(req, res) {
-    console.log(req.body);
-    
-    const body = req.body;
-    
-    if(body.refreshToken != 'RefreshToken') return res.sendStatus(401);
-    
-    let token = jwt.sign({userID: 2, role: 'admin'}, 'todo-app-super-shared-secret', {expiresIn: '75000'});
-    res.send({ auth_token: token, refresh_token: 'RefreshToken' });
-});
-
-app.get('/testdata', (req, res, next) => { 
-    console.log("get /testdata"); 
-    console.log(req.auth.userID);
-    res.send({ 1: 'testing', 2: 'tester'});
-}) 
-
-const server = app.listen(3000, function () {
-    let port = server.address().port 
-    // Starting the Server at the port 3000 
-    console.log(`Started on PORT ${port}`);
-}) 
->>>>>>> 578ff160392e402713642084a2721129ab823e28
+})
