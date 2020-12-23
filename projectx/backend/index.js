@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 require('dotenv').config();
 const express = require('express');
 const bcrypt = require('bcrypt');
@@ -139,3 +140,5 @@ app.delete('/api/logout', (req, res) => {
     return res.send('Successfully logged out. Thank you!');
   });
 });
+=======
+>>>>>>> parent of 578ff16... Merge pull request #1 from vkcg/TestBranch-1
